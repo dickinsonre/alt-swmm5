@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>St. Venant in SWMM5 — First-Principles Deconstruction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0c;
+  --surface: #111115;
+  --surface2: #18181e;
+  --surface3: #1f1f28;
+  --border: #2a2a35;
+  --border-accent: #3a3a4a;
+  --text: #e8e6e0;
+  --text-dim: #8a8880;
+  --text-muted: #5a5850;
+  --accent: #c4ff3b;
+  --accent-dim: #8ab82a;
+  --accent2: #3bffc4;
+  --accent3: #ff6b3b;
+  --accent4: #ff3b8a;
+  --red: #ff4444;
+  --green: #44ff88;
+  --yellow: #ffdd44;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+::selection { background: var(--accent); color: var(--bg); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+/* NAV */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,10,12,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+}
+nav .container { display: flex; align-items: center; gap: 24px; overflow-x: auto; }
+nav a {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text-dim); white-space: nowrap; transition: color 0.2s;
+}
+nav a:hover { color: var(--accent); text-decoration: none; }
+
+/* HERO */
+.hero {
+  padding: 120px 0 80px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 60px;
+}
+.hero h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 20px;
+}
+.hero h1 em { font-style: italic; color: var(--accent); }
+.hero .subtitle {
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 600px;
+  line-height: 1.8;
+}
+.hero .tag {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 3px 10px;
+  margin-bottom: 16px;
+}
+
+/* SECTIONS */
+section {
+  margin-bottom: 80px;
+  padding-top: 40px;
+}
+.section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+h2 {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  margin-bottom: 24px;
+  line-height: 1.2;
+}
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 32px 0 12px;
+  color: var(--accent2);
+}
+h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+  color: var(--text);
+}
+p { margin-bottom: 14px; color: var(--text-dim); }
+p strong { color: var(--text); font-weight: 600; }
+
+/* MATH BLOCKS */
+.math-block {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  padding: 20px 24px;
+  margin: 16px 0;
+  font-size: 14px;
+  line-height: 2;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.math-block .comment { color: var(--text-muted); font-style: italic; }
+.math-block .highlight { color: var(--accent); font-weight: 600; }
+.math-block .warn { color: var(--accent3); }
+.math-block .good { color: var(--accent2); }
+
+/* ASSUMPTION CARDS */
+.assumption-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin: 20px 0;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.assumption-card:hover { border-color: var(--border-accent); }
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+.card-header:hover { background: var(--surface2); }
+.card-num {
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  min-width: 28px;
+}
+.card-title { font-weight: 600; font-size: 14px; flex: 1; }
+.card-verdict {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 3px 10px;
+  border-radius: 2px;
+}
+.verdict-arbitrary { color: var(--accent3); border: 1px solid var(--accent3); }
+.verdict-partial { color: var(--yellow); border: 1px solid var(--yellow); }
+.verdict-fundamental { color: var(--accent2); border: 1px solid var(--accent2); }
+.card-body { padding: 20px; display: none; }
+.card-body.open { display: block; }
+
+/* GRID LAYOUTS */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+@media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }
+@media (max-width: 700px) { .grid-3 { grid-template-columns: 1fr; } }
+
+.mini-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+.mini-card .label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* COMPARISON TABLE */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.compare-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--text-muted);
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  background: var(--surface);
+}
+.compare-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  vertical-align: top;
+}
+.compare-table tr:hover td { background: var(--surface); }
+
+/* LISTS */
+ul, ol { margin: 12px 0; padding-left: 20px; color: var(--text-dim); }
+li { margin-bottom: 6px; }
+li strong { color: var(--text); }
+
+/* CALLOUT */
+.callout {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent4);
+  padding: 16px 20px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+.callout .callout-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent4);
+  margin-bottom: 6px;
+}
+
+/* DIAGRAM */
+.diagram {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 24px;
+  margin: 20px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text-dim);
+}
+.diagram .accent { color: var(--accent); }
+.diagram .accent2 { color: var(--accent2); }
+.diagram .dim { color: var(--text-muted); }
+
+/* FLOW CHART */
+.flow-step {
+  display: flex;
+  gap: 16px;
+  margin: 12px 0;
+  align-items: flex-start;
+}
+.flow-num {
+  width: 28px; height: 28px;
+  background: var(--accent);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.flow-content { flex: 1; }
+.flow-content p { margin-bottom: 4px; }
+
+/* DIVIDER */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 60px 0;
+}
+
+/* FOOTER */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 0;
+  margin-top: 80px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ANIMATIONS */
+.fade-in {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: fadeUp 0.6s ease forwards;
+}
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+
+/* TOOLTIP */
+.tip {
+  border-bottom: 1px dashed var(--accent);
+  cursor: help;
+}
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <a href="#overview">Overview</a>
+    <a href="#assumptions">12 Assumptions</a>
+    <a href="#bedrock">Bedrock Truths</a>
+    <a href="#rebuild">Rebuilt Model</a>
+    <a href="#contrast">Contrast</a>
+    <a href="#new">New Capabilities</a>
+    <a href="#verdict">Verdict</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- ═══════════════════ HERO ═══════════════════ -->
+<header class="hero fade-in" id="overview">
+  <div class="tag">First-Principles Deconstruction</div>
+  <h1>The St. Venant Equations<br>in SWMM5 — <em>Stripped Bare</em></h1>
+  <p class="subtitle">
+    A rigorous deconstruction of every inherited assumption, convention, and sacred cow baked into how we implement 1D unsteady flow. We separate what physics demands from what engineering tradition chose, then rebuild from bedrock truths alone.
+  </p>
+</header>
+
+<!-- ═══════════════════ CONTEXT ═══════════════════ -->
+<section id="context" class="fade-in delay-1">
+  <div class="section-label">Context</div>
+  <h2>What SWMM5 Actually Solves</h2>
+  <p>SWMM5 solves a discretized version of the <strong>1D Saint-Venant equations</strong> over a node-link network representing stormwater and sewer infrastructure. The two governing PDEs are:</p>
+
+  <div class="math-block"><span class="comment">── Continuity (mass conservation) ──────────────────────</span>
+∂A/∂t + ∂Q/∂x = 0
+
+<span class="comment">── Momentum (Newton's 2nd law for a fluid column) ──────</span>
+∂Q/∂t + ∂(Q²/A)/∂x + <span class="highlight">gA ∂h/∂x</span> + <span class="warn">gA S_f</span> = 0
+       convective    pressure gradient   friction
+
+<span class="comment">where:
+  A = flow cross-section area          [L²]
+  Q = discharge                         [L³/T]
+  h = water surface elevation           [L]
+  S_f = friction slope (empirical)      [-]
+  g = gravitational acceleration        [L/T²]</span></div>
+
+  <p>SWMM5 then makes a cascade of implementation choices. Each one feels inevitable. Most aren't.</p>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════ ASSUMPTIONS ═══════════════════ -->
+<section id="assumptions" class="fade-in delay-2">
+  <div class="section-label">Part I</div>
+  <h2>The Twelve Inherited Assumptions</h2>
+  <p>Every assumption below is widely treated as self-evident. We tag each: <span style="color:var(--accent2)">Fundamental</span> (physics demands it at this scale), <span style="color:var(--yellow)">Partial</span> (partially justified, partially convention), or <span style="color:var(--accent3)">Arbitrary</span> (engineering choice, not physics).</p>
+
+  <!-- ASSUMPTION 1 -->
+  <div class="assumption-card" id="a1">
+    <div class="card-header" onclick="toggleCard('a1')">
+      <span class="card-num">01</span>
+      <span class="card-title">One-Dimensional Flow Representation</span>
+      <span class="card-verdict verdict-partial">Partial</span>
+    </div>
+    <div class="card-body" id="a1-body">
+      <h4>The Inherited Belief</h4>
+      <p>Flow varies only along the pipe/conduit axis. Velocity is a scalar function of one spatial coordinate and time: <strong>v = v(x, t)</strong>. Cross-sectional quantities (area, depth) are treated as single-valued.</p>
+
+      <h4>First-Principles Truth</h4>
+      <p>Real flow is 3D Navier-Stokes. The 1D reduction is justified when:</p>
+      <ul>
+        <li><strong>Aspect ratio</strong> — conduit length >> hydraulic diameter (typically >10:1 in pipes). This is almost always true in sewer/stormwater networks.</li>
+        <li><strong>Dominant flow direction</strong> — pressure gradients and inertia primarily align with the conduit axis. Valid for prismatic conduits without severe bends.</li>
+        <li><strong>Cross-sectional mixing</strong> — velocity profile shape is approximately self-similar (fully developed turbulent flow). This is reasonable at moderate Reynolds numbers.</li>
+      </ul>
+      <p><strong>Where it breaks:</strong> junctions, transitions, inlet structures, surcharging, storage nodes, any location where 3D flow structure dominates. These are precisely the places SWMM5 uses "node" abstractions to punt on the problem.</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p>1D is <strong>partially fundamental</strong> — the aspect ratio of pipes genuinely justifies reduction from 3D. But the specific way SWMM5 collapses cross-sections into a single area-depth curve, and the specific way it handles junctions as zero-volume "nodes," are engineering conventions, not physics. A 1.5D or quasi-2D approach at junctions would be more honest.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 2 -->
+  <div class="assumption-card" id="a2">
+    <div class="card-header" onclick="toggleCard('a2')">
+      <span class="card-num">02</span>
+      <span class="card-title">Hydrostatic Pressure Distribution</span>
+      <span class="card-verdict verdict-fundamental">Fundamental</span>
+    </div>
+    <div class="card-body" id="a2-body">
+      <h4>The Inherited Belief</h4>
+      <p>Pressure at any depth equals ρgh. Vertical acceleration of water is neglected. The pressure term in momentum reduces to <strong>gA ∂h/∂x</strong>.</p>
+
+      <h4>First-Principles Truth</h4>
+      <p>This follows from the Froude number being small in the vertical direction — vertical accelerations (including free-surface curvature) are negligible compared to gravity when:</p>
+      <div class="math-block">|∂²η/∂x²| · H << 1    <span class="comment">(wave curvature × depth is small)</span>
+
+<span class="comment">For stormwater: H ~ 0.1–3m, pipe length ~ 100m
+  → curvature × depth ~ 0.003–0.3  ✓ almost always valid</span></div>
+      <p><strong>Where it breaks:</strong> hydraulic jumps, sharp transitions, plunging flow at drop structures, wave breaking. These are all situations where the 1D model is already suspect.</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Genuinely fundamental</strong> at the scales SWMM5 operates. The vertical Froude number in pipes and open channels is almost always ≪ 1. This isn't convention — it's a provable consequence of the geometry. Don't waste time questioning this one.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 3 -->
+  <div class="assumption-card" id="a3">
+    <div class="card-header" onclick="toggleCard('a3')">
+      <span class="card-num">03</span>
+      <span class="card-title">Manning's Equation for Friction</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a3-body">
+      <h4>The Inherited Belief</h4>
+      <p>Friction slope is computed via Manning's equation:</p>
+      <div class="math-block"><span class="highlight">S_f = (n² Q |Q|) / (A² R^(4/3))</span>
+
+<span class="comment">where:
+  n = Manning's roughness coefficient   [T/L^(1/3)]
+  R = hydraulic radius = A/P            [L]
+  P = wetted perimeter                  [L]</span></div>
+
+      <h4>First-Principles Truth</h4>
+      <p>The <strong>only</strong> thing physics demands is that friction dissipates energy. The actual turbulent boundary layer creates a shear stress τ_w on the wetted perimeter. The energy slope is:</p>
+      <div class="math-block"><span class="good">S_f = τ_w / (ρgR)</span>    <span class="comment">(this is definitional, always true)</span>
+
+<span class="comment">The question is: how do we model τ_w?</span></div>
+      <p>Manning's equation is one of several empirical correlations. It assumes:</p>
+      <ul>
+        <li>Fully rough turbulent flow (Reynolds number independence)</li>
+        <li>Roughness is characterized by a single scalar <strong>n</strong></li>
+        <li>n is constant with depth (often false — composite channels)</li>
+        <li>The velocity profile follows a power-law shape implied by n</li>
+        <li>The 6/10 exponent on R is empirical, not derived</li>
+      </ul>
+      <p>Alternatives that are equally (or more) physically grounded:</p>
+      <ul>
+        <li><strong>Darcy-Weisbach:</strong> S_f = f·(V²/2gR) — connects to Moody diagram, Reynolds-number dependent</li>
+        <li><strong>Colebrook-White:</strong> implicit form, more accurate in transition regime</li>
+        <li><strong>Nikuradse:</strong> explicit for fully rough regime</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Purely arbitrary.</strong> Manning's n is a 19th-century empirical fit. It works well in the range it was calibrated for (full-pipe turbulent flow in rough conduits). But it's not fundamental — it's a curve fit with a specific functional form that happens to be convenient. The Darcy-Weisbach formulation is more physically transparent and connects to fluid mechanics fundamentals. SWMM5's choice of Manning is tradition, not truth.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 4 -->
+  <div class="assumption-card" id="a4">
+    <div class="card-header" onclick="toggleCard('a4')">
+      <span class="card-num">04</span>
+      <span class="card-title">Kinematic / Diffusion Wave Simplification</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a4-body">
+      <h4>The Inherited Belief</h4>
+      <p>SWMM5 offers three wave formulations. Most users select <strong>kinematic wave</strong> (the default), which drops most of the momentum equation:</p>
+      <div class="math-block"><span class="comment">── Full Dynamic Wave ──────────────────</span>
+∂Q/∂t + ∂(Q²/A)/∂x + gA∂h/∂x + gAS_f = 0
+
+<span class="comment">── Diffusion Wave (drop inertia) ──────</span>
+gA∂h/∂x + gAS_f = 0    <span class="warn">⟹ S_f = -∂h/∂x</span>
+
+<span class="comment">── Kinematic Wave (drop inertia + pressure) ──</span>
+<span class="highlight">S_f = S_0</span>    <span class="warn">⟹ friction slope = bed slope</span>
+<span class="comment">No backwater effects. No flow reversal. No storage.</span></div>
+
+      <h4>First-Principles Truth</h4>
+      <p>The momentum equation has four terms. Each represents a physical force balance:</p>
+      <ul>
+        <li><strong>∂Q/∂t</strong> — local acceleration (temporal inertia)</li>
+        <li><strong>∂(Q²/A)/∂x</strong> — convective acceleration</li>
+        <li><strong>gA∂h/∂x</strong> — pressure gradient (gravity + hydrostatic)</li>
+        <li><strong>gAS_f</strong> — friction resistance</li>
+      </ul>
+      <p>Dropping terms is justified when their ratio to the dominant terms is small. The relevant dimensionless numbers:</p>
+      <div class="math-block"><span class="comment">── Froude Number ──────────────────────</span>
+Fr = V / √(gD)
+<span class="comment">  Fr << 1: subcritical, pressure dominates
+  Fr >> 1: supercritical, inertia dominates
+  Fr ≈ 1:  critical, all terms comparable</span>
+
+<span class="comment">── Kinematic Wave Number ──────────────</span>
+k = S_0 · L / (Fr² · D)
+<span class="comment">  k >> 1: kinematic wave valid
+  k ~ 1:  diffusion wave needed
+  k << 1: full dynamic wave needed</span></div>
+      <p><strong>The kinematic wave is valid only when:</strong> steep slopes, long reaches, no downstream control, no backwater. For flat-gradient sewers (common!), it's wrong.</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Arbitrary and often wrong.</strong> The kinematic wave is the default because it's numerically stable and fast, not because it's correct. For the majority of urban drainage systems with flat slopes, backwater effects from downstream controls (outfalls, weirs, pumps) dominate. Using kinematic wave in these systems isn't simplification — it's error. The full dynamic wave should be the default; kinematic should be the opt-in for steep, long reaches.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 5 -->
+  <div class="assumption-card" id="a5">
+    <div class="card-header" onclick="toggleCard('a5')">
+      <span class="card-num">05</span>
+      <span class="card-title">Preissmann Slot for Pressurized Flow</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a5-body">
+      <h4>The Inherited Belief</h4>
+      <p>When a closed conduit is full, SWMM5 inserts a narrow hypothetical slot (Preissmann slot) on top of the cross-section to maintain a free-surface representation:</p>
+      <div class="math-block"><span class="comment">── Standard cross-section ────────────</span>
+Area = f(depth)     <span class="comment">for depth ≤ crown</span>
+
+<span class="comment">── With Preissmann slot ───────────────</span>
+Area = <span class="highlight">A_conduit + W_slot × (depth - crown)</span>    <span class="warn">for depth > crown</span>
+<span class="comment">where W_slot is very narrow (~1% of conduit width)</span></div>
+      <p>This avoids a discontinuity in the governing equations at the transition between open-channel and pressurized flow.</p>
+
+      <h4>First-Principles Truth</h4>
+      <p>Physics doesn't care about equation continuity. When a pipe is full:</p>
+      <ul>
+        <li>The free surface ceases to exist — there's no ∂h/∂x in the usual sense</li>
+        <li>Pressure becomes the independent variable, not depth</li>
+        <li>Acoustic waves (pressure transients) propagate at c ≈ √(K/ρ) ≈ 1400 m/s</li>
+        <li>Water hammer dynamics become relevant</li>
+      </ul>
+      <p>The Preissmann slot artificially slows these pressure waves to the speed of the "slot wave" (~10–50 m/s), which is orders of magnitude slower than real pressure transients.</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Arbitrary numerical convenience.</strong> It works adequately for slowly-varying surcharge conditions. But it fundamentally cannot capture water hammer, rapid filling events, or the true transient pressure dynamics that damage infrastructure. Alternative approaches (characteristic method, shock-capturing schemes, or explicit free-surface/pressurized switching) are more physically honest but harder to implement. The slot is a pragmatic hack, not a physical model.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 6 -->
+  <div class="assumption-card" id="a6">
+    <div class="card-header" onclick="toggleCard('a6')">
+      <span class="card-num">06</span>
+      <span class="card-title">Node-Link Network Topology</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a6-body">
+      <h4>The Inherited Belief</h4>
+      <p>The drainage system is represented as a graph: <strong>nodes</strong> (junctions, storage units, outfalls) connected by <strong>links</strong> (conduits, pumps, orifices, weirs). Mass is conserved at nodes; momentum is solved along links.</p>
+
+      <div class="diagram"><span class="accent">[Inflow]</span> ──→ <span class="accent2">(Node)</span> ──→ <span class="dim">[Conduit]</span> ──→ <span class="accent2">(Node)</span> ──→ <span class="dim">[Conduit]</span> ──→ <span class="accent">(Outfall)</span>
+
+<span class="dim">  Node: stores mass, zero volume (except storage nodes)
+  Link: carries flow, has geometry, solves momentum</span></div>
+
+      <h4>First-Principles Truth</h4>
+      <p>Real junctions have <strong>finite volume</strong>, <strong>3D flow patterns</strong>, <strong>energy losses</strong>, and <strong>flow separation</strong>. The node-link abstraction:</p>
+      <ul>
+        <li>Treats junctions as dimensionless points (mass in = mass out instantaneously)</li>
+        <li>Requires ad-hoc "loss coefficients" at junctions (K values) that are poorly characterized</li>
+        <li>Creates artificial numerical issues at junctions (sudden area changes, reflection of waves)</li>
+        <li>Cannot represent manhole hydraulics, drop structures, or complex junction chambers</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Arbitrary graph abstraction.</strong> The real system is a connected volume, not a graph. The node-link split forces mass conservation into nodes and momentum conservation into links, creating artificial boundaries where physics demands continuity. A finite-volume approach that treats the entire network as interconnected control volumes would be more physically natural. The node-link convention persists because it maps to CAD/GIS workflows and makes input data manageable — not because it reflects hydraulic reality.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 7 -->
+  <div class="assumption-card" id="a7">
+    <div class="card-header" onclick="toggleCard('a7')">
+      <span class="card-num">07</span>
+      <span class="card-title">Finite-Difference Spatial Discretization</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a7-body">
+      <h4>The Inherited Belief</h4>
+      <p>Each conduit is divided into N computational reaches. Derivatives are replaced by finite differences:</p>
+      <div class="math-block">∂Q/∂x ≈ (Q_j - Q_{j-1}) / Δx    <span class="comment">(backward difference)</span>
+∂h/∂x ≈ (h_{j+1} - h_j) / Δx    <span class="comment">(forward difference)</span></div>
+
+      <h4>First-Principles Truth</h4>
+      <p>The PDE is continuous. Any discretization is an approximation. Alternatives:</p>
+      <ul>
+        <li><strong>Finite Volume:</strong> conserves mass/momentum by construction; handles shocks naturally</li>
+        <li><strong>Finite Element:</strong> better for complex geometries; natural for adaptive refinement</li>
+        <li><strong>Spectral methods:</strong> exponential convergence for smooth solutions</li>
+        <li><strong>Smooth Particle Hydrodynamics:</strong> mesh-free, handles large deformations</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Arbitrary numerical method choice.</strong> Finite difference is the simplest to implement and understand, which is why SWMM5 uses it. Finite volume would be more physically honest (it enforces conservation laws at the discrete level by construction, not by hoping the discretization is fine enough). The choice affects accuracy, stability, and conservation properties — but not the underlying physics being approximated.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 8 -->
+  <div class="assumption-card" id="a8">
+    <div class="card-header" onclick="toggleCard('a8')">
+      <span class="card-num">08</span>
+      <span class="card-title">Implicit Time Integration (Preissmann Scheme)</span>
+      <span class="card-verdict verdict-partial">Partial</span>
+    </div>
+    <div class="card-body" id="a8-body">
+      <h4>The Inherited Belief</h4>
+      <p>SWMM5 uses a weighted implicit scheme where spatial derivatives are evaluated at time level <strong>n+θ</strong>:</p>
+      <div class="math-block">∂f/∂x |_{n+θ} = θ · ∂f/∂x |_{n+1} + (1-θ) · ∂f/∂x |_n
+
+<span class="comment">θ = 0.5: Crank-Nicolson (2nd order, conditionally stable)
+θ = 1.0: Fully implicit (1st order, unconditionally stable)
+SWMM5 uses θ ≈ 0.55–0.6 typically</span></div>
+
+      <h4>First-Principles Truth</h4>
+      <p>Time integration is a numerical artifact. Physics is continuous in time. The choice of scheme affects:</p>
+      <ul>
+        <li><strong>Stability:</strong> implicit schemes allow larger Δt (Courant number > 1)</li>
+        <li><strong>Accuracy:</strong> Crank-Nicolson is 2nd-order but can produce oscillations</li>
+        <li><strong>Numerical diffusion:</strong> fully implicit adds artificial viscosity</li>
+        <li><strong>Computational cost:</strong> implicit requires solving a linear system each step</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Partially fundamental.</strong> The need to discretize in time is fundamental (we can't solve continuous PDEs on computers). But the specific scheme, weighting parameter, and time step are all trade-offs between accuracy, stability, and cost. The implicit choice is justified by the Courant number variability in sewer networks (reaches of different lengths, depths, velocities). But it introduces numerical diffusion that can smear flood peaks — a real physical error, not just a numerical artifact.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 9 -->
+  <div class="assumption-card" id="a9">
+    <div class="card-header" onclick="toggleCard('a9')">
+      <span class="card-num">09</span>
+      <span class="card-title">Incompressible Flow</span>
+      <span class="card-verdict verdict-fundamental">Fundamental</span>
+    </div>
+    <div class="card-body" id="a9-body">
+      <h4>The Inherited Belief</h4>
+      <p>Water density ρ is constant. The continuity equation uses ∂A/∂t + ∂Q/∂x = 0, not the compressible form with ∂ρ/∂t.</p>
+
+      <h4>First-Principles Truth</h4>
+      <p>The Mach number in stormwater systems:</p>
+      <div class="math-block">Ma = V / c_sound ≈ (1–5 m/s) / 1400 m/s ≈ <span class="good">0.001–0.004</span>
+
+<span class="comment">For Ma < 0.3, incompressible assumption introduces < 3% error.
+At Ma ~ 0.003, the error is negligible.</span></div>
+      <p><strong>Exception:</strong> during water hammer (rapid valve closure), pressure waves propagate at the true sound speed, and compressibility matters. But SWMM5 can't handle this anyway (see Preissmann slot).</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Genuinely fundamental</strong> at normal operating conditions. Mach numbers are ≪ 0.1. Compressibility is irrelevant except during transient events that the model can't capture regardless. Don't question this one.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 10 -->
+  <div class="assumption-card" id="a10">
+    <div class="card-header" onclick="toggleCard('a10')">
+      <span class="card-num">10</span>
+      <span class="card-title">Uniform Velocity Across Cross-Section</span>
+      <span class="card-verdict verdict-partial">Partial</span>
+    </div>
+    <div class="card-body" id="a10-body">
+      <h4>The Inherited Belief</h4>
+      <p>Q = VA, where V is a single velocity value. The actual velocity profile (parabolic in laminar, logarithmic/power-law in turbulent) is collapsed to one number via the "energy coefficient" or "Boussinesq coefficient":</p>
+      <div class="math-block">α = (1/A) ∫(v/V)³ dA    <span class="comment">(Coriolis coefficient, kinetic energy correction)</span>
+β = (1/A) ∫(v/V)² dA    <span class="comment">(Boussinesq coefficient, momentum correction)</span>
+
+<span class="comment">SWMM5 implicitly sets α = β = 1 (uniform velocity).
+Real turbulent pipe flow: α ≈ 1.03–1.10, β ≈ 1.01–1.05</span></div>
+
+      <h4>First-Principles Truth</h4>
+      <p>The velocity profile is determined by the balance of turbulent shear stress, wall roughness, and pressure gradient. It's never truly uniform. But:</p>
+      <ul>
+        <li>For fully rough turbulent flow (high Re), the profile flattens and α → 1</li>
+        <li>The correction factors are small (3–10%) for typical pipe flows</li>
+        <li>At junctions, transitions, and partially-filled pipes, the profile is highly non-uniform</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Partially justified.</strong> The correction factors are small for fully-developed turbulent pipe flow, so α = β = 1 is a reasonable approximation. But the assumption silently fails at every junction, transition, and partially-filled section — precisely where the node-link abstraction already struggles. The error is small in magnitude but systematic (it underestimates momentum flux).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 11 -->
+  <div class="assumption-card" id="a11">
+    <div class="card-header" onclick="toggleCard('a11')">
+      <span class="card-num">11</span>
+      <span class="card-title">Rigid Boundaries (No Sediment / Morphology)</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a11-body">
+      <h4>The Inherited Belief</h4>
+      <p>Conduit geometry is fixed. Roughness coefficients are constant. The bed doesn't erode, deposit, or change shape. Sediment transport is ignored or handled externally.</p>
+
+      <h4>First-Principles Truth</h4>
+      <p>Flow exerts shear stress on the bed. When τ > τ_critical, sediment moves. This changes:</p>
+      <ul>
+        <li>Cross-sectional geometry (aggradation/degradation)</li>
+        <li>Roughness (sediment bedforms change n or f)</li>
+        <li>Capacity (deposited sediment reduces area)</li>
+      </ul>
+      <p>For many systems (combined sewers, channels with significant sediment), this is a first-order effect on long-term performance.</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Arbitrary scope limitation.</strong> SWMM5 is a hydraulic model, not a morphodynamic model. This is a legitimate engineering scope choice. But it means the model can't answer "how does system capacity change over decades?" — a question that matters for asset management. Coupling with sediment transport models is possible but not built-in.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSUMPTION 12 -->
+  <div class="assumption-card" id="a12">
+    <div class="card-header" onclick="toggleCard('a12')">
+      <span class="card-num">12</span>
+      <span class="card-title">Quasi-Steady Friction in Unsteady Flow</span>
+      <span class="card-verdict verdict-arbitrary">Arbitrary</span>
+    </div>
+    <div class="card-body" id="a12-body">
+      <h4>The Inherited Belief</h4>
+      <p>Friction is computed using the steady-flow Manning/Darcy-Weisbach formula at each time step, as if the flow were steady. The instantaneous Q and A go into the friction formula.</p>
+
+      <h4>First-Principles Truth</h4>
+      <p>In unsteady flow, the velocity profile lags behind the bulk flow. The actual friction includes:</p>
+      <ul>
+        <li><strong>Quasi-steady component:</strong> same as steady-flow friction at instantaneous Q</li>
+        <li><strong>Unsteady component:</strong> convolution integral of past accelerations (history effect)</li>
+        <li><strong>Wall shear stress memory:</strong> the boundary layer takes time to adjust</li>
+      </ul>
+      <p>The unsteady friction correction can be 5–20% of total friction during rapid transients.</p>
+
+      <div class="callout">
+        <div class="callout-label">Verdict</div>
+        <p><strong>Arbitrary simplification.</strong> For slowly-varying hydrographs (typical storm events), quasi-steady friction is adequate. For rapid transients (pump start/stop, valve closure, rapid filling), it introduces systematic error. Models like Brunone or Vardy-Brown unsteady friction models exist but add significant computational cost.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════ BEDROCK ═══════════════════ -->
+<section id="bedrock" class="fade-in">
+  <div class="section-label">Part II</div>
+  <h2>Bedrock Truths — What Survives</h2>
+  <p>After stripping away every convention, here is what is <strong>provably, physically, mathematically true</strong> about 1D unsteady flow in conduits:</p>
+
+  <div class="flow-step">
+    <div class="flow-num">1</div>
+    <div class="flow-content">
+      <h4>Mass is conserved in every control volume.</h4>
+      <p>For any fixed volume V in the system: rate of mass in − rate of mass out = rate of mass accumulation. This is Newtonian physics. No exceptions at these scales. The integral form ∮ ρv·dA + ∂/∂t ∫ρ dV = 0 is exact.</p>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">2</div>
+    <div class="flow-content">
+      <h4>Momentum changes equal net forces (F = ma).</h4>
+      <p>For a fluid control volume: d(momentum)/dt = Σ forces. Forces include: gravity (body force), pressure on all surfaces (including walls), and wall shear stress. This is exact. The challenge is representing each force term accurately in 1D.</p>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">3</div>
+    <div class="flow-content">
+      <h4>Gravity acts downward with magnitude g.</h4>
+      <p>The gravitational body force on a fluid element is ρgV, directed vertically downward. In the momentum equation, this projects onto the conduit axis as ρgA·S_0 (bed slope component). Exact.</p>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">4</div>
+    <div class="flow-content">
+      <h4>Pressure is hydrostatic in the vertical (at these scales).</h4>
+      <p>Proven: vertical Froude number ≪ 1 for all practical pipe/channel flows. Pressure at depth h below the surface = ρgh. This reduces the pressure force to gA·(∂h/∂x). This is not an approximation — it's a provable consequence of the geometry.</p>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">5</div>
+    <div class="flow-content">
+      <h4>Wall shear stress dissipates energy.</h4>
+      <p>τ_w exists on every wetted surface. The energy dissipation rate = τ_w · V · P · L (shear × velocity × perimeter × length). The force on the fluid is τ_w · P · L directed opposite to flow. This is exact. The only question is how to model τ_w as a function of flow state.</p>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">6</div>
+    <div class="flow-content">
+      <h4>Flow cross-sections have geometry: A(h), P(h), and their derivatives.</h4>
+      <p>Any conduit has a shape. Given water depth h, the area A and wetted perimeter P are deterministic functions. The top width T = dA/dh. These are geometric facts, not physical assumptions.</p>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">7</div>
+    <div class="flow-content">
+      <h4>Energy is conserved (1st law of thermodynamics).</h4>
+      <p>Total mechanical energy + dissipated energy = input energy. In practice, this manifests as the energy grade line (EGL) declining in the flow direction at rate S_f. The EGL equation H = z + h + αV²/2g is a statement of energy conservation.</p>
+    </div>
+  </div>
+
+  <div class="math-block"><span class="comment">── The bedrock system (exact in 1D) ──────────────────</span>
+
+<span class="good">Mass:</span>    ∂A/∂t + ∂Q/∂x = q_lateral
+
+<span class="good">Momentum:</span> ∂Q/∂t + ∂(βQ²/A)/∂x + gA∂h/∂x + gAS_f = 0
+
+<span class="comment">── where S_f must be modeled ──────────────────────────</span>
+<span class="highlight">S_f = τ_w / (ρgR)</span>    <span class="comment">(exact definition)</span>
+τ_w = f(Re, ε/D, flow_history) × ½ρV²    <span class="comment">(must be modeled)</span>
+
+<span class="comment">── Geometry (exact for any shape) ────────────────────</span>
+A = A(h),  P = P(h),  T = dA/dh,  R = A/P</div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════ REBUILD ═══════════════════ -->
+<section id="rebuild" class="fade-in">
+  <div class="section-label">Part III</div>
+  <h2>Rebuilt From Bedrock</h2>
+  <p>Starting from only the seven truths above, here is the minimal viable model and its invariants.</p>
+
+  <h3>Minimal Viable Model</h3>
+
+  <div class="math-block"><span class="comment">── Control Volume Formulation ────────────────────────</span>
+<span class="comment">Replace node-link graph with explicit control volumes.</span>
+<span class="comment">Each CV has: geometry, state (A, Q), connections to neighbors.</span>
+
+<span class="highlight">State vector per CV:</span>  [A, Q] or equivalently [h, V]
+
+<span class="comment">── Evolution (per time step Δt) ──────────────────────</span>
+For each control volume i:
+  <span class="good">Mass:</span>  A_i^{n+1} = A_i^n + (Δt/Δx_i) × (Q_in - Q_out) + Δt × q_i
+  <span class="good">Mom:</span>  Q_i^{n+1} = Q_i^n + Δt × F_net_i / m_i
+
+  where F_net includes:
+    <span class="good">+</span> gravity:    ρg A_i S_{0,i}
+    <span class="good">−</span> pressure:   ρg A_i (h_{i+1} - h_{i-1}) / (2Δx)
+    <span class="good">−</span> friction:   τ_{w,i} × P_i × Δx
+    <span class="good">±</span> convective: computed from Q²/A fluxes at CV faces</div>
+
+  <h3>Key Invariants (What the Model Must Preserve)</h3>
+
+  <div class="grid-2">
+    <div class="mini-card">
+      <div class="label">Invariant 1</div>
+      <p><strong>Mass conservation is exact</strong> at the discrete level. Total water volume in system = initial volume + ∫(inflow − outflow) dt. This must hold to machine precision, not just approximately.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Invariant 2</div>
+      <p><strong>Energy dissipation is non-negative.</strong> S_f must have the same sign as Q (friction always opposes flow). The model must never create energy from friction.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Invariant 3</div>
+      <p><strong>Monotonicity of area-depth.</strong> dA/dh = T ≥ 0 (more depth = more area). The cross-section geometry must be physically realizable.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Invariant 4</div>
+      <p><strong>Causality.</strong> Information propagates at finite speed (≤ celerity of gravity waves √(gD) or pressure waves √(K/ρ)). No instantaneous action at a distance.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Invariant 5</div>
+      <p><strong>Positivity.</strong> A ≥ 0, h ≥ 0. Negative depths are unphysical. The numerics must enforce this.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Invariant 6</div>
+      <p><strong>Galilean consistency.</strong> Adding a uniform velocity to the entire system should not change the relative dynamics. The equations are frame-invariant.</p>
+    </div>
+  </div>
+
+  <h3>Necessary Trade-Offs</h3>
+  <p>No model avoids trade-offs. But we can be honest about what we're trading:</p>
+
+  <table class="compare-table">
+    <tr>
+      <th>Trade-Off</th>
+      <th>Option A</th>
+      <th>Option B</th>
+      <th>What Determines the Choice</th>
+    </tr>
+    <tr>
+      <td><strong>Dimensionality</strong></td>
+      <td>1D (fast, scalable)</td>
+      <td>2D/3D (accurate at junctions)</td>
+      <td>Aspect ratio of conduits; junction complexity</td>
+    </tr>
+    <tr>
+      <td><strong>Friction model</strong></td>
+      <td>Algebraic (Manning, D-W)</td>
+      <td>History-dependent (unsteady friction)</td>
+      <td>Rate of flow change; accuracy needs</td>
+    </tr>
+    <tr>
+      <td><strong>Time stepping</strong></td>
+      <td>Implicit (large Δt, stable)</td>
+      <td>Explicit (small Δt, accurate transients)</td>
+      <td>Courant number variation; transient importance</td>
+    </tr>
+    <tr>
+      <td><strong>Spatial discretization</strong></td>
+      <td>Structured (simple, fast)</td>
+      <td>Adaptive (accurate where needed)</td>
+      <td>Flow regime gradients; computational budget</td>
+    </tr>
+    <tr>
+      <td><strong>Pressurization</strong></td>
+      <td>Smooth transition (slot)</td>
+      <td>Sharp interface (front-tracking)</td>
+      <td>Importance of transient pressure; water hammer risk</td>
+    </tr>
+  </table>
+
+  <h3>Cleanest Expression of the Domain</h3>
+  <p>If we could design the ideal computational framework from scratch, ignoring all legacy code:</p>
+
+  <div class="math-block"><span class="comment">── Ideal Architecture ─────────────────────────────────</span>
+
+<span class="highlight">1. CONSERVATION-VOLUME MESH</span>
+   Not a node-link graph. A mesh of control volumes where
+   each CV has geometry, state, and flux connections.
+   Junctions are explicit CVs with 3D-inspired loss models.
+
+<span class="highlight">2. FINITE-VOLUME DISCRETIZATION</span>
+   Mass and momentum conservation enforced at the CV level.
+   Fluxes computed at faces using Riemann solvers.
+   Guarantees discrete conservation by construction.
+
+<span class="highlight">3. ADAPTIVE WAVE RESOLUTION</span>
+   Full dynamic wave everywhere by default.
+   Automatic detection of kinematic/diffusion wave regions
+   (where the solution is smooth and slopes are steep).
+   Reduction is automatic, not user-selected.
+
+<span class="highlight">4. PHYSICS-BASED FRICTION</span>
+   Darcy-Weisbach with Moody/Colebrook-White.
+   Re-dependent (captures laminar/turbulent transition).
+   Optional unsteady correction for rapid transients.
+   Manning available as a legacy convenience layer.
+
+<span class="highlight">5. EXPLICIT PRESSURE TRANSITION</span>
+   Free-surface and pressurized flow handled by different
+   equation sets with a sharp, tracked interface.
+   Pressure wave speed = true acoustic speed.
+   Water hammer captured naturally.
+
+<span class="highlight">6. COUPLED TIME INTEGRATION</span>
+   Adaptive time stepping based on CFL condition.
+   Higher-order scheme (RK4 or SSP-RK3) for smooth regions.
+   TVD limiting near shocks/discontinuities.</div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════ CONTRAST ═══════════════════ -->
+<section id="contrast" class="fade-in">
+  <div class="section-label">Part IV</div>
+  <h2>Legacy vs. Rebuilt — Side by Side</h2>
+
+  <table class="compare-table">
+    <tr>
+      <th style="width:20%">Aspect</th>
+      <th style="width:40%">SWMM5 / Conventional</th>
+      <th style="width:40%">Rebuilt from First Principles</th>
+    </tr>
+    <tr>
+      <td><strong>Network representation</strong></td>
+      <td>Node-link graph. Junctions = dimensionless points. Mass balance at nodes, momentum in links.</td>
+      <td>Control volume mesh. Junctions = explicit volumes with loss physics. No artificial mass/momentum split.</td>
+    </tr>
+    <tr>
+      <td><strong>Default wave type</strong></td>
+      <td>Kinematic wave (user must opt-in to dynamic). Backwater effects require explicit choice.</td>
+      <td>Full dynamic wave everywhere. Automatic reduction to diffusion/kinematic where physics allows.</td>
+    </tr>
+    <tr>
+      <td><strong>Friction</strong></td>
+      <td>Manning's n (empirical, Re-independent, constant-n assumption).</td>
+      <td>Darcy-Weisbach with Moody. Re-dependent. Composite roughness for irregular sections.</td>
+    </tr>
+    <tr>
+      <td><strong>Pressurization</strong></td>
+      <td>Preissmann slot (artificial narrow slot, slows pressure waves by 100×).</td>
+      <td>Explicit free-surface/pressurized interface. True acoustic wave speed. Water hammer capable.</td>
+    </tr>
+    <tr>
+      <td><strong>Discretization</strong></td>
+      <td>Finite difference. User specifies number of reaches per conduit.</td>
+      <td>Finite volume with Riemann solver. Adaptive refinement. Conservation by construction.</td>
+    </tr>
+    <tr>
+      <td><strong>Time integration</strong></td>
+      <td>Weighted implicit (θ ≈ 0.55). Fixed time step. Numerical diffusion at high Courant numbers.</td>
+      <td>Adaptive explicit/implicit hybrid. CFL-limited Δt. TVD limiting for sharp fronts.</td>
+    </tr>
+    <tr>
+      <td><strong>Junction losses</strong></td>
+      <td>User-specified K coefficients (often guessed or defaulted to 0).</td>
+      <td>Physics-based loss models from junction geometry. Borda-Carnot, expansion/contraction, bend losses computed from geometry.</td>
+    </tr>
+    <tr>
+      <td><strong>Cross-section</strong></td>
+      <td>Pre-defined shapes (circular, rectangular, trapezoidal, etc.) with lookup tables.</td>
+      <td>Arbitrary polygonal cross-sections. Moment-based properties. Composite roughness per segment.</td>
+    </tr>
+    <tr>
+      <td><strong>Conservation</strong></td>
+      <td>Approximate. Mass errors can accumulate. Momentum conservation not guaranteed at discretization level.</td>
+      <td>Exact at machine precision. Finite volume guarantees discrete conservation.</td>
+    </tr>
+  </table>
+
+  <h3>What Becomes Optional or Obsolete</h3>
+
+  <div class="grid-2">
+    <div class="mini-card">
+      <div class="label">Obsolete</div>
+      <p><strong>User selection of wave type.</strong> The solver should determine when kinematic/diffusion approximations are valid based on local flow conditions (Fr, k). Users shouldn't have to know about wave types.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Obsolete</div>
+      <p><strong>Preissmann slot.</strong> Replaced by explicit interface tracking. The slot was always a hack; removing it unlocks real transient analysis.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Obsolete</div>
+      <p><strong>Manual reach discretization.</strong> Users specify "number of computational reaches" per conduit — a numerical parameter masquerading as a physical one. Adaptive refinement makes this automatic.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Optional</div>
+      <p><strong>Manning's n.</strong> Still usable as a convenience input (auto-converted to equivalent Darcy-Weisbach f), but no longer the primary friction parameter. D-W is the native format.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Optional</div>
+      <p><strong>Junction K-loss coefficients.</strong> Still overridable, but the default is computed from junction geometry. Most users currently guess these anyway.</p>
+    </div>
+    <div class="mini-card">
+      <div class="label">Obsolete</div>
+      <p><strong>The node-link mental model.</strong> Replaced by the control-volume mesh. This changes how users conceptualize their system — from a "plumbing diagram" to a "connected volume field."</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════ NEW CAPABILITIES ═══════════════════ -->
+<section id="new" class="fade-in">
+  <div class="section-label">Part V</div>
+  <h2>New Capabilities Unlocked</h2>
+
+  <div class="assumption-card">
+    <div class="card-header">
+      <span class="card-num" style="color:var(--accent2)">I</span>
+      <span class="card-title">Real Transient / Water Hammer Analysis</span>
+    </div>
+    <div class="card-body open">
+      <p>With explicit pressure-wave propagation (true c ≈ 1400 m/s), the rebuilt model can answer:</p>
+      <ul>
+        <li>What happens when a pump trips? (pressure surge magnitude, reflection timing)</li>
+        <li>What's the maximum transient pressure in a force main?</li>
+        <li>Do we need a surge tank? What size?</li>
+      </ul>
+      <p>Currently, these questions require a separate model (e.g., HAMMER, Wanda). The rebuilt architecture handles them natively.</p>
+    </div>
+  </div>
+
+  <div class="assumption-card">
+    <div class="card-header">
+      <span class="card-num" style="color:var(--accent2)">II</span>
+      <span class="card-title">Adaptive Resolution — "Smart" Wave Selection</span>
+    </div>
+    <div class="card-body open">
+      <p>Instead of the user choosing kinematic/diffusion/dynamic, the solver monitors:</p>
+      <div class="math-block">Local Fr = V/√(gD)
+Local k = S_0·L / (Fr²·D)
+∂h/∂x magnitude (backwater indicator)
+Courant number Co = (V + √(gD))·Δt/Δx</div>
+      <p>and automatically uses the minimum-fidelity solver that maintains accuracy. Steep, long reach with Fr >> 1? Kinematic wave. Flat reach with downstream weir? Full dynamic. This gives <strong>the speed of kinematic with the accuracy of dynamic</strong>, without user intervention.</p>
+    </div>
+  </div>
+
+  <div class="assumption-card">
+    <div class="card-header">
+      <span class="card-num" style="color:var(--accent2)">III</span>
+      <span class="card-title">Guaranteed Conservation — Trustworthy Mass Balance</span>
+    </div>
+    <div class="card-body open">
+      <p>Finite volume discretization means mass is conserved <strong>to machine precision</strong> regardless of grid resolution, time step, or flow regime. No more mysterious "mass balance errors" in SWMM5 reports. This is critical for:</p>
+      <ul>
+        <li>Regulatory compliance (permit reporting requires mass balance closure)</li>
+        <li>Long simulations (small errors accumulate over days/weeks of continuous modeling)</li>
+        <li>Calibration (you can trust that discrepancies are physical, not numerical)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="assumption-card">
+    <div class="card-header">
+      <span class="card-num" style="color:var(--accent2)">IV</span>
+      <span class="card-title">Junction Physics — No More K-Coefficient Guessing</span>
+    </div>
+    <div class="card-body open">
+      <p>Junctions modeled as explicit control volumes with:</p>
+      <ul>
+        <li><strong>Borda-Carnot losses</strong> from area expansion: K = (1 - A₁/A₂)²</li>
+        <li><strong>Contraction losses</strong>: K from empirical curves as function of A₂/A₁</li>
+        <li><strong>Bend losses</strong>: K from bend angle and R/D ratio</li>
+        <li><strong>Momentum mixing</strong> at confluences: computed from junction geometry and angle</li>
+      </ul>
+      <p>All computed from geometry. Users input the physical junction shape, not a guessed K.</p>
+    </div>
+  </div>
+
+  <div class="assumption-card">
+    <div class="card-header">
+      <span class="card-num" style="color:var(--accent2)">V</span>
+      <span class="card-title">Composite Cross-Sections with Segment-Specific Roughness</span>
+    </div>
+    <div class="card-body open">
+      <p>Real channels are rarely one material. A natural channel might have:</p>
+      <div class="math-block"><span class="dim">  ┌─────────────────────────────┐</span>
+<span class="dim">  │</span> <span class="accent">vegetation (n=0.05)</span>         <span class="dim">│</span>  ← floodplain
+<span class="dim">  │</span>   <span class="accent2">concrete (n=0.013)</span>        <span class="dim">│</span>  ← main channel
+<span class="dim">  │</span>     <span class="accent3">gravel (n=0.030)</span>      <span class="dim">│</span>  ← invert
+<span class="dim">  └─────────────────────────────┘</span></div>
+      <p>The rebuilt model computes A, P, and effective roughness per segment, then combines using Einstein's divided-channel method or Lotter's method — not a single averaged n.</p>
+    </div>
+  </div>
+
+  <div class="assumption-card">
+    <div class="card-header">
+      <span class="card-num" style="color:var(--accent2)">VI</span>
+      <span class="card-title">Unified Open-Channel / Pressurized / Transient Solver</span>
+    </div>
+    <div class="card-body open">
+      <p>One solver handles the full spectrum:</p>
+      <ul>
+        <li>Dry → partially full (open channel)</li>
+        <li>Partially full → full (filling transition)</li>
+        <li>Full, steady (pressurized flow)</li>
+        <li>Full, transient (water hammer, pump trip)</li>
+        <li>Full → partially full (emptying transition, column separation)</li>
+      </ul>
+      <p>No mode switching, no separate models, no slot hacks. The same equations, with the same conservation guarantees, across all regimes.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════ VERDICT ═══════════════════ -->
+<section id="verdict" class="fade-in">
+  <div class="section-label">Verdict</div>
+  <h2>The Scorecard</h2>
+
+  <table class="compare-table">
+    <tr>
+      <th>Assumption</th>
+      <th>Status</th>
+      <th>Why</th>
+    </tr>
+    <tr>
+      <td>1D flow</td>
+      <td style="color:var(--yellow)">Keep (modified)</td>
+      <td>Aspect ratio justifies it in conduits. Add quasi-2D at junctions.</td>
+    </tr>
+    <tr>
+      <td>Hydrostatic pressure</td>
+      <td style="color:var(--accent2)">Keep</td>
+      <td>Vertically proven at these scales. Fundamental.</td>
+    </tr>
+    <tr>
+      <td>Manning's friction</td>
+      <td style="color:var(--accent3)">Replace</td>
+      <td>Arbitrary empirical form. D-W is more physically transparent.</td>
+    </tr>
+    <tr>
+      <td>Kinematic wave default</td>
+      <td style="color:var(--accent3)">Replace</td>
+      <td>Wrong for flat slopes. Auto-detect instead of user choice.</td>
+    </tr>
+    <tr>
+      <td>Preissmann slot</td>
+      <td style="color:var(--accent3)">Replace</td>
+      <td>Numerical hack. Explicit interface tracking is more honest.</td>
+    </tr>
+    <tr>
+      <td>Node-link topology</td>
+      <td style="color:var(--accent3)">Replace</td>
+      <td>Arbitrary graph abstraction. CV mesh is more physical.</td>
+    </tr>
+    <tr>
+      <td>Finite difference</td>
+      <td style="color:var(--accent3)">Replace</td>
+      <td>Doesn't guarantee conservation. Finite volume does.</td>
+    </tr>
+    <tr>
+      <td>Implicit time stepping</td>
+      <td style="color:var(--yellow)">Modify</td>
+      <td>Keep implicit capability, add adaptive explicit for transients.</td>
+    </tr>
+    <tr>
+      <td>Incompressible flow</td>
+      <td style="color:var(--accent2)">Keep</td>
+      <td>Mach ≈ 0.003. Error < 0.001%. Fundamental.</td>
+    </tr>
+    <tr>
+      <td>Uniform velocity</td>
+      <td style="color:var(--yellow)">Keep (modified)</td>
+      <td>α, β corrections small for pipe flow. Add at junctions.</td>
+    </tr>
+    <tr>
+      <td>Rigid boundaries</td>
+      <td style="color:var(--yellow)">Scope choice</td>
+      <td>Legitimate for hydraulics. Add coupling for morphodynamics.</td>
+    </tr>
+    <tr>
+      <td>Quasi-steady friction</td>
+      <td style="color:var(--yellow)">Modify</td>
+      <td>Fine for storms. Add unsteady correction for transients.</td>
+    </tr>
+  </table>
+
+  <div class="callout" style="border-color: var(--accent2); margin-top: 32px;">
+    <div class="callout-label" style="color: var(--accent2);">Summary</div>
+    <p>Of 12 inherited assumptions: <strong>3 are genuinely fundamental</strong> (hydrostatic pressure, incompressibility, 1D reduction at conduit scale). <strong>3 are partially justified</strong> (implicit time stepping, uniform velocity, quasi-steady friction). <strong>6 are arbitrary conventions</strong> that persist because of legacy code, pedagogical inertia, and the path of least resistance — not because physics demands them.</p>
+    <p>The rebuilt model is not more complex — it's more <strong>honest</strong>. It uses the same two PDEs. It just refuses to pretend that engineering shortcuts are physical laws.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    First-principles deconstruction of St. Venant in SWMM5.<br>
+    <span style="color:var(--text-muted)">The equations don't care about our implementation choices. We should be equally unsentimental.</span>
+  </div>
+</footer>
+
+</div>
+
+<script>
+function toggleCard(id) {
+  const body = document.getElementById(id + '-body');
+  if (body) {
+    body.classList.toggle('open');
+  }
+}
+
+// Intersection observer for scroll animations
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.style.opacity = '1';
+      entry.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.assumption-card, .mini-card, .flow-step').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(12px)';
+  el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>
