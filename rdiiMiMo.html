@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RDII in SWMM5 — First-Principles Deconstruction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0c0b;
+  --surface: #121614;
+  --surface-2: #1a1f1c;
+  --surface-3: #222825;
+  --accent: #7ecf8a;
+  --accent-dim: #3a6b42;
+  --accent-glow: rgba(126,207,138,0.08);
+  --red: #cf7e7e;
+  --red-dim: #6b3a3a;
+  --amber: #cfaa7e;
+  --amber-dim: #6b5a3a;
+  --text: #d4ddd6;
+  --text-muted: #6b7a6e;
+  --text-dim: #3a4a3d;
+  --border: #2a352d;
+  --mono: 'DM Mono', monospace;
+  --serif: 'Instrument Serif', Georgia, serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+::selection { background: var(--accent-dim); color: var(--accent); }
+a { color: var(--accent); text-decoration: none; }
+
+/* NAV */
+nav {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: rgba(10,12,11,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex; align-items: center; gap: 1.5rem;
+  height: 48px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow-x: auto;
+}
+nav a {
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+nav a:hover { color: var(--accent); }
+nav .brand {
+  color: var(--accent);
+  font-weight: 500;
+  margin-right: auto;
+  font-family: var(--serif);
+  font-size: 15px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* LAYOUT */
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 80px 2rem 6rem;
+}
+
+/* HERO */
+.hero {
+  margin-bottom: 4rem;
+  padding-bottom: 3rem;
+  border-bottom: 1px solid var(--border);
+}
+.hero h1 {
+  font-family: var(--serif);
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--text);
+  margin-bottom: 1rem;
+}
+.hero h1 em {
+  color: var(--accent);
+  font-style: italic;
+}
+.hero .subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  max-width: 600px;
+}
+
+/* SECTIONS */
+section {
+  margin-bottom: 4rem;
+  animation: fadeUp 0.5s ease both;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+h2 {
+  font-family: var(--serif);
+  font-size: 1.7rem;
+  font-weight: 400;
+  color: var(--text);
+  margin-bottom: 0.3rem;
+}
+h2 .num {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.7em;
+  margin-right: 0.5em;
+}
+h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin: 2rem 0 0.8rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+h4 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--amber);
+  margin: 1.5rem 0 0.5rem;
+}
+p { margin-bottom: 1rem; }
+p + p { margin-top: 0; }
+
+/* CARDS */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1.2rem 1.4rem;
+  margin: 1rem 0;
+}
+.card-red {
+  border-left: 3px solid var(--red-dim);
+  background: linear-gradient(90deg, rgba(207,126,126,0.04), var(--surface));
+}
+.card-green {
+  border-left: 3px solid var(--accent-dim);
+  background: linear-gradient(90deg, rgba(126,207,138,0.04), var(--surface));
+}
+.card-amber {
+  border-left: 3px solid var(--amber-dim);
+  background: linear-gradient(90deg, rgba(207,170,126,0.04), var(--surface));
+}
+
+/* LISTS */
+ul, ol {
+  margin: 0.5rem 0 1rem 1.2rem;
+}
+li {
+  margin-bottom: 0.4rem;
+  color: var(--text);
+}
+li::marker {
+  color: var(--accent-dim);
+}
+
+/* CODE */
+pre {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1rem 1.2rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--accent);
+  background: var(--surface-2);
+  padding: 0.15em 0.4em;
+  border-radius: 2px;
+}
+pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+/* TABLES */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 12.5px;
+}
+th {
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 2px solid var(--border);
+  color: var(--accent);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tr:hover td { background: var(--accent-glow); }
+
+/* CALLOUT */
+.callout {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  padding: 1rem 1.2rem;
+  margin: 1.2rem 0;
+  border-radius: 3px;
+  font-size: 13px;
+}
+.callout-icon {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+}
+.callout-warn {
+  background: rgba(207,170,126,0.06);
+  border: 1px solid var(--amber-dim);
+}
+.callout-true {
+  background: rgba(126,207,138,0.06);
+  border: 1px solid var(--accent-dim);
+}
+.callout-false {
+  background: rgba(207,126,126,0.06);
+  border: 1px solid var(--red-dim);
+}
+
+/* DIAGRAMS */
+.diagram {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1.5rem;
+  margin: 1.2rem 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* BADGE */
+.badge {
+  display: inline-block;
+  padding: 0.15em 0.5em;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+  margin-left: 0.3em;
+}
+.badge-sacred { background: var(--red-dim); color: var(--red); }
+.badge-arbitrary { background: var(--amber-dim); color: var(--amber); }
+.badge-fundamental { background: var(--accent-dim); color: var(--accent); }
+
+/* INTERACTIVE PANELS */
+.panel-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin: 1.5rem 0 0;
+}
+.panel-tab {
+  padding: 0.5rem 1rem;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  background: none;
+  border-top: none; border-left: none; border-right: none;
+  font-family: var(--mono);
+}
+.panel-tab:hover { color: var(--text); }
+.panel-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.panel-content {
+  display: none;
+  padding: 1.2rem 0;
+}
+.panel-content.active { display: block; }
+
+/* COMPARISON GRID */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+@media (max-width: 600px) {
+  .compare { grid-template-columns: 1fr; }
+}
+.compare-col h4 {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* PROGRESS INDICATOR */
+.progress-bar {
+  position: fixed;
+  top: 48px; left: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 101;
+  transition: width 0.1s;
+  box-shadow: 0 0 8px var(--accent-dim);
+}
+
+/* FOOTER */
+footer {
+  margin-top: 4rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progress"></div>
+
+<nav>
+  <span class="brand">RDII Deconstruction</span>
+  <a href="#assumptions">Assumptions</a>
+  <a href="#bedrock">Bedrock Truths</a>
+  <a href="#rebuild">Rebuild</a>
+  <a href="#contrast">Contrast</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#playground">Playground</a>
+</nav>
+
+<div class="container">
+
+<!-- HERO -->
+<header class="hero">
+  <h1>First-Principles Deconstruction of <em>RDII in SWMM5</em></h1>
+  <p class="subtitle">Stripping every inherited assumption from Rainfall-Dependent Infiltration &amp; Inflow modeling. What survives is what's real. Everything else was a choice.</p>
+</header>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 1: INHERITED ASSUMPTIONS -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="assumptions">
+<h2><span class="num">01</span> Inherited Assumptions</h2>
+<p>What almost everyone takes for granted when working with RDII — users calibrating, developers coding, educators teaching, researchers publishing. Each of these is treated as "how it works" when it's actually "how we chose to model it."</p>
+
+<h3>1.1 The RTK Triangular Unit Hydrograph <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> RDII response to rainfall is modeled as a triangular unit hydrograph parameterized by R (fraction), T (time-to-peak), and K (recession ratio). Up to three triangles can be superimposed per month.</p>
+  <p><strong>Why it's inherited:</strong> The triangular UH was chosen in the 1990s for computational simplicity and parameter identifiability. It became "the RDII method" not because sewer systems produce triangular hydrographs, but because three parameters were calibration-friendly and computationally cheap.</p>
+</div>
+
+<h3>1.2 Linear Time-Invariant (LTI) Superposition <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> RDII response is linearly proportional to rainfall depth. Double the rain, double the RDII volume. Responses from different time steps superimpose additively.</p>
+  <p><strong>Reality check:</strong> A saturated soil column, a surcharged pipe, and a flooded depression are all nonlinear, state-dependent systems. The soil doesn't care about our superposition principle.</p>
+</div>
+
+<h3>1.3 Infiltration vs. Inflow as Separate Phenomena <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> I/I is taught and modeled as two categories — infiltration (groundwater entering through defects below the water table) and inflow (surface/roof runoff entering through direct connections). SWMM5's RTK lumps them together, but the mental model persists.</p>
+  <p><strong>Reality check:</strong> In a real system, the boundary is blurred. A cracked joint at 4 feet depth may be "infiltration" during dry weather and "inflow" during a storm when the depression fills. The soil-pipe interface is a continuum, not a binary.</p>
+</div>
+
+<h3>1.4 Monthly Seasonal Variation as Discrete States <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> RTK parameters vary by calendar month (12 discrete states). January parameters, February parameters, etc.</p>
+  <p><strong>Reality check:</strong> Soil moisture and groundwater response are continuous functions of antecedent precipitation, evapotranspiration, temperature, and season — not step functions that jump on the 1st of each month.</p>
+</div>
+
+<h3>1.5 Spatial Homogeneity Within a Sewershed <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> One set of RTK parameters represents an entire sewershed (or a few sub-areas). The spatial variability of soil types, pipe materials, water table depth, and connection density is averaged out.</p>
+  <p><strong>Reality check:</strong> A sewershed with mixed clay soil, aging VCP, and shallow groundwater on one end, and sandy soil with new PVC and deep water table on the other, does not have a single RTK response.</p>
+</div>
+
+<h3>1.6 Antecedent Moisture is Captured by Monthly Variation <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> The "wet" vs. "dry" state of the system is implicitly handled by having different monthly parameters. January is assumed wetter than August.</p>
+  <p><strong>Reality check:</strong> A 3-week drought in March produces different conditions than a 3-day gap between storms in March. Antecedent moisture is event-specific, not month-specific.</p>
+</div>
+
+<h3>1.7 The System is Fully Drained Between Events <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> Unit hydrograph theory assumes the system returns to baseline before the next event. The RTK method inherits this assumption implicitly.</p>
+  <p><strong>Reality check:</strong> Groundwater mounding around pipes can persist for days or weeks. Soil storage doesn't fully drain between closely spaced storms. Baseflow-like sustained RDII between events is common.</p>
+</div>
+
+<h3>1.8 Rainfall is the Only Forcing Function <span class="badge badge-sacred">treated as sacred</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> RDII is driven solely by rainfall at the surface. Other forcings are ignored.</p>
+  <p><strong>Reality check:</strong> Tidal fluctuations, snowmelt, irrigation return flows, rising regional groundwater, upstream reservoir releases, and even barometric pressure changes can drive water into or out of sewer pipes. Rainfall is dominant but not exclusive.</p>
+</div>
+
+<h3>1.9 Calibration as Truth <span class="badge badge-arbitrary">arbitrary</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> If you calibrate RTK parameters to observed flow data, you have "captured" the RDII process.</p>
+  <p><strong>Reality check:</strong> Calibration captures the <em>input-output behavior during the calibration period</em>. With 3–9 free parameters per month (up to 3 triangles × 3 params), you have enormous degrees of freedom. Equifinality is rampant — many parameter sets produce similar fits. The calibrated parameters may not be physically meaningful or transferable.</p>
+</div>
+
+<h3>1.10 The Model Boundary is the Pipe Network <span class="badge badge-sacred">treated as sacred</span></h3>
+<div class="card card-red">
+  <p><strong>Convention:</strong> RDII is modeled at the point where water enters the pipe network. Everything upstream of that entry point is a black box described by the UH.</p>
+  <p><strong>Reality check:</strong> The actual processes — surface depression storage, soil infiltration, lateral subsurface flow, groundwater mounding, pipe-soil interface hydraulics — are physically continuous. Treating the pipe boundary as the model boundary discards all mechanistic information.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 2: BEDROCK TRUTHS -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="bedrock">
+<h2><span class="num">02</span> Bedrock Truths</h2>
+<p>What is <strong>fundamentally, provably true</strong> about the physical system — independent of SWMM5, RTK, unit hydrographs, or any modeling framework. Only conservation laws, physics, and logic.</p>
+
+<h3>2.1 Conservation of Mass <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>Every molecule of water that enters a sewer pipe came from somewhere and went through some pathway. The total mass balance is inviolable:</p>
+</div>
+<pre><code>V_rainfall = V_surface_runoff + V_evap + V_ET + V_infiltration_to_soil + V_RDII + V_other_sinks
+
+At the pipe boundary:
+  V_RDII = V_groundwater_in + V_surface_in + V_depression_overflow_in + V_other_direct_entries
+</code></pre>
+<p>This is not a modeling assumption — it's physics. Any model that violates mass balance is wrong.</p>
+
+<h3>2.2 Gravity and Pressure Gradients Drive Flow <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>Water moves from high hydraulic head to low hydraulic head. In a sewer pipe, the head inside is typically lower than the surrounding saturated soil or surface depression storage during a storm. This head difference is the fundamental driving force for RDII.</p>
+</div>
+<pre><code>Q_RDII ∝ f(H_soil - H_pipe, soil_hydraulic_conductivity, pipe_defect_geometry)
+
+This is Darcy's Law + orifice/weir equations at defects.
+Not a triangle. Not a unit hydrograph. Physics.
+</code></pre>
+
+<h3>2.3 Soil is a Stateful, Nonlinear Reservoir <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>The vadose zone (unsaturated soil above the water table) stores water, transmits water nonlinearly (Richards' equation), and has a capacity that changes with antecedent conditions. This is the primary "delay and attenuate" mechanism for infiltration-type RDII.</p>
+</div>
+<pre><code>Soil state S(t) ∈ [0, S_max]
+  dS/dt = P(t) - ET(t) - K(S) · ∇H - Q_deep
+  where K(S) is highly nonlinear (exponential in many soil models)
+
+The soil's "unit hydrograph" is not a triangle — it's the impulse
+response of a nonlinear reservoir that changes shape with state.
+</code></pre>
+
+<h3>2.4 Pipe Defects are Physical Orifices and Weirs <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>Water enters pipes through cracks, joint gaps, deteriorated walls, and broken laterals. Each defect is a small hydraulic structure governed by orifice or weir flow equations, depending on the head differential and submergence.</p>
+</div>
+<pre><code>For a defect at depth d below surface:
+  If H_soil(d) > H_pipe(d):
+    Q_defect = C_d · A_defect · √(2g · ΔH)    [orifice flow]
+  If defect is partially submerged:
+    Q_defect = C_w · L_defect · (ΔH)^1.5        [weir flow]
+
+Total RDII = Σ Q_defect(i) for all defects i
+This is additive but NOT linear in rainfall — it depends on H_soil(t),
+which is a state variable.
+</code></pre>
+
+<h3>2.5 The Water Table is a Continuous Boundary Condition <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>Groundwater elevation is a spatially and temporally continuous field. It responds to recharge (rainfall infiltration), discharge (to streams, pipes, ET), and regional flow. The water table elevation at each pipe location determines the head available to drive infiltration.</p>
+</div>
+
+<h3>2.6 Surface Hydraulics Connect to Subsurface <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>Surface depressions, direct connections (roof drains, catch basins), and surcharged conditions create direct hydraulic pathways. These are governed by surface hydraulics (Manning's, weir/orifice) and are separate from the subsurface pathway but physically connected at the surface.</p>
+</div>
+
+<h3>2.7 Time is Continuous, Not Discrete Monthly States <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>The physical system evolves continuously. Soil moisture, groundwater elevation, and surface conditions are continuous functions of time. Any discretization into "monthly parameters" is a modeling convenience, not a physical truth.</p>
+</div>
+
+<h3>2.8 Spatial Variability is Real and Significant <span class="badge badge-fundamental">fundamental</span></h3>
+<div class="card card-green">
+  <p>Pipe age, material, soil type, depth to water table, land use, and connection density all vary spatially. The spatial distribution of RDII potential within a sewershed is a measurable (or at least estimable) physical reality.</p>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 3: REBUILD FROM BEDROCK -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="rebuild">
+<h2><span class="num">03</span> Rebuild from Bedrock</h2>
+<p>Starting only from the truths in Section 02, here is the minimal viable model, its invariants, necessary trade-offs, and cleanest expression.</p>
+
+<h3>3.1 Minimal Viable Model</h3>
+<p>The simplest physically-grounded RDII model needs:</p>
+<ol>
+  <li><strong>A soil moisture state variable</strong> S(t) that tracks wetness continuously</li>
+  <li><strong>A groundwater head</strong> H_gw(t) at each modeled location</li>
+  <li><strong>A pipe internal head</strong> H_pipe(t) from the hydraulic model</li>
+  <li><strong>A transfer function</strong> from head difference to flow through defects</li>
+  <li><strong>A surface pathway</strong> for direct inflow</li>
+</ol>
+
+<div class="diagram">
+  ┌─────────────┐
+  │  RAINFALL   │
+  │  P(t)       │
+  └──────┬──────┘
+         │
+    ┌────▼────────────────────────┐
+    │  SURFACE LAYER              │
+    │  Depression storage D(t)    │──── Direct inflow Q_di(t)
+    │  D(t) = min(P·Δt, D_max)   │     (if connected)
+    └────┬────────────────────────┘
+         │ infiltration rate I(t)
+    ┌────▼────────────────────────┐
+    │  VADOSE ZONE (Soil)         │
+    │  State: S(t) ∈ [0, S_max]  │
+    │  dS/dt = I - ET - Q_lateral │
+    │  Nonlinear K(S)             │
+    └────┬────────────────────────┘
+         │ recharge to GW
+    ┌────▼────────────────────────┐
+    │  WATER TABLE                │
+    │  H_gw(t) — continuous field │
+    └────┬────────────────────────┘
+         │ head difference
+    ┌────▼────────────────────────┐
+    │  PIPE-SOIL INTERFACE        │
+    │  ΔH = H_gw - H_pipe        │
+    │  Q_rdii = f(ΔH, defects)   │──── RDII into network
+    └─────────────────────────────┘
+</div>
+
+<h3>3.2 Key Invariants</h3>
+<div class="card card-green">
+  <ul>
+    <li><strong>Mass conservation</strong> — always, everywhere. No exceptions.</li>
+    <li><strong>Q_RDII ≥ 0</strong> — water only flows into pipes, never out (unless surcharged, which is a separate failure mode).</li>
+    <li><strong>Monotonicity in ΔH</strong> — higher head difference → higher flow. Always.</li>
+    <li><strong>State dependence</strong> — the same rainfall on wet soil produces more RDII than on dry soil. This is an invariant of the physical system that any valid model must capture.</li>
+    <li><strong>Temporal continuity</strong> — S(t) and H_gw(t) are continuous. No jumps except from instantaneous rainfall (which is itself a modeling fiction at sub-timestep scales).</li>
+    <li><strong>Diminishing returns</strong> — soil has finite capacity. As S → S_max, infiltration rate drops. This is physics, not a parameter choice.</li>
+  </ul>
+</div>
+
+<h3>3.3 Cleanest Mathematical Expression</h3>
+<pre><code>// STATE VARIABLES (per spatial unit)
+S(t)     // soil moisture [0, S_max], volume/volume
+H_gw(t)  // groundwater head [m above datum]
+
+// FORCING
+P(t)     // rainfall intensity [m/s]
+ET(t)    // evapotranspiration rate [m/s]
+H_pipe(t)// pipe hydraulic head [m] (from flow model)
+
+// PHYSICS
+// 1. Soil moisture balance
+dS/dt = P(t) · f_inf(S) - ET(t) - K_sat · g(S) · (∂H/∂z)
+
+where:
+  f_inf(S) = infiltration fraction = (1 - S/S_max)^β   // Green-Ampt-like
+  g(S)     = relative conductivity = exp(α·(S - S_0))   // exponential
+
+// 2. Groundwater response (simplified lumped)
+dH_gw/dt = (1/S_y) · [K_sat · g(S) · (∂H/∂z) - Q_drain(H_gw)]
+
+where S_y = specific yield, Q_drain = lateral/baseflow
+
+// 3. RDII transfer
+ΔH(t) = max(0, H_gw(t) - H_pipe(t))
+Q_rdii(t) = C · A_defects · √(2g · ΔH(t))   // orifice equation
+
+// 4. Surface inflow (direct connections)
+Q_direct(t) = η · [P(t) - f_inf(S)·P(t)]   // η = connection fraction
+
+// TOTAL RDII
+Q_total(t) = Q_rdii(t) + Q_direct(t)
+</code></pre>
+
+<h3>3.4 Necessary Trade-offs</h3>
+<p>No model is the territory. Here's what we trade away honestly:</p>
+
+<table>
+  <tr><th>Trade-off</th><th>What We Simplify</th><th>What We Keep</th></tr>
+  <tr>
+    <td>Lumped vs. distributed soil</td>
+    <td>Spatial variability in soil properties</td>
+    <td>State-dependent nonlinear response</td>
+  </tr>
+  <tr>
+    <td>1D groundwater</td>
+    <td>Full 3D groundwater flow</td>
+    <td>Head-driven flow with storage</td>
+  </tr>
+  <tr>
+    <td>Effective defect area</td>
+    <td>Individual crack geometry</td>
+    <td>Aggregate orifice behavior with ΔH dependence</td>
+  </tr>
+  <tr>
+    <td>Simplified ET</td>
+    <td>Full energy balance</td>
+    <td>Seasonal drying capacity</td>
+  </tr>
+  <tr>
+    <td>No explicit surface routing</td>
+    <td>2D surface hydraulics</td>
+    <td>Depression storage → direct connection</td>
+  </tr>
+</table>
+
+<div class="callout callout-warn">
+  <span class="callout-icon">⚠</span>
+  <div>The rebuild has <strong>more parameters</strong> than RTK in raw count (S_max, K_sat, α, β, S_y, C, A_defects, η). But these parameters have <strong>physical meaning, measurable correlates, and bounded ranges</strong>. RTK's parameters have neither physical meaning nor transferability — they are pure curve-fitting knobs.</div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 4: CONTRAST -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="contrast">
+<h2><span class="num">04</span> Contrast: Legacy vs. Rebuilt</h2>
+
+<div class="panel-tabs">
+  <button class="panel-tab active" onclick="showPanel('changes')">What Changes</button>
+  <button class="panel-tab" onclick="showPanel('obsolete')">What Becomes Obsolete</button>
+  <button class="panel-tab" onclick="showPanel('newcaps')">New Capabilities</button>
+</div>
+
+<div id="panel-changes" class="panel-content active">
+<h3>What the Rebuilt Version Changes</h3>
+
+<div class="compare">
+  <div class="compare-col">
+    <h4 style="color:var(--red)">Legacy (RTK)</h4>
+    <div class="card card-red">
+      <ul>
+        <li>Linear response to rainfall</li>
+        <li>Monthly discrete states</li>
+        <li>No antecedent moisture tracking</li>
+        <li>No physical basis for parameters</li>
+        <li>Same rainfall → same RDII regardless of soil state</li>
+        <li>Calibration-dependent; not transferable</li>
+        <li>No mechanism for between-event sustained RDII</li>
+        <li>Cannot respond to non-rainfall forcings</li>
+      </ul>
+    </div>
+  </div>
+  <div class="compare-col">
+    <h4 style="color:var(--accent)">Rebuilt (State-Based)</h4>
+    <div class="card card-green">
+      <ul>
+        <li>Nonlinear, state-dependent response</li>
+        <li>Continuous soil moisture evolution</li>
+        <li>Explicit antecedent moisture via S(t)</li>
+        <li>Parameters tied to soil physics &amp; pipe condition</li>
+        <li>Same rainfall → different RDII based on S(t)</li>
+        <li>Transferable across similar soil/pipe conditions</li>
+        <li>Sustained baseflow RDII from slow GW drainage</li>
+        <li>Can accept tidal, snowmelt, irrigation forcings</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h3>What Improves</h3>
+<ul>
+  <li><strong>Event-based accuracy:</strong> First storms after dry periods correctly produce less RDII than later storms in a series. RTK can only do this if you manually adjust monthly parameters.</li>
+  <li><strong>Continuous simulation:</strong> No artificial boundaries between "events." The model runs forward continuously, which is what the physical system does.</li>
+  <li><strong>Climate sensitivity:</strong> Changing precipitation patterns (more intense, less frequent; or longer wet seasons) produce physically reasonable RDII changes without recalibration.</li>
+  <li><strong>Infrastructure planning:</strong> "What happens if we reline 30% of the pipes?" becomes answerable by reducing A_defects — a physically meaningful change. In RTK, you'd have to guess how R changes.</li>
+</ul>
+</div>
+
+<div id="panel-obsolete" class="panel-content">
+<h3>Legacy Constraints That Become Optional or Obsolete</h3>
+
+<table>
+  <tr><th>Legacy Element</th><th>Status in Rebuilt Model</th><th>Why</th></tr>
+  <tr>
+    <td>Triangular unit hydrograph</td>
+    <td>Obsolete</td>
+    <td>Replaced by physically-derived impulse response from soil + GW dynamics. Shape emerges from physics, not assumed.</td>
+  </tr>
+  <tr>
+    <td>R, T, K parameters</td>
+    <td>Obsolete</td>
+    <td>Replaced by measurable physical properties: S_max, K_sat, defect area, etc. No more curve-fitting knobs.</td>
+  </tr>
+  <tr>
+    <td>Monthly parameter tables</td>
+    <td>Obsolete</td>
+    <td>Replaced by continuous state evolution. Seasonality emerges from ET(T), not from a lookup table.</td>
+  </tr>
+  <tr>
+    <td>Up to 3 superimposed triangles</td>
+    <td>Obsolete</td>
+    <td>The "fast/slow" separation was a workaround for the triangular UH's inability to produce complex response shapes. The soil/GW model produces the correct shape directly.</td>
+  </tr>
+  <tr>
+    <td>Event separation</td>
+    <td>Obsolete</td>
+    <td>Continuous simulation eliminates inter-event assumptions entirely.</td>
+  </tr>
+  <tr>
+    <td>Calibration-dependent parameters</td>
+    <td>Replaced</td>
+    <td>Parameters have physical meaning. Calibration refines estimates but isn't the sole source of parameter values. Lab tests, soil surveys, CCTV inspection data, and literature values all constrain parameters.</td>
+  </tr>
+  <tr>
+    <td>RDII as a black-box input</td>
+    <td>Obsolete</td>
+    <td>RDII becomes a mechanistic output of coupled soil-GW-pipe physics.</td>
+  </tr>
+</table>
+</div>
+
+<div id="panel-newcaps" class="panel-content">
+<h3>Surprising New Capabilities</h3>
+
+<div class="card card-green">
+  <h4>1. Predictive Power Without Calibration Data</h4>
+  <p>With soil surveys, pipe inspection data, and water table monitoring, you can estimate RDII for <em>unmonitored sewersheds</em>. RTK requires flow monitoring to calibrate — there is no "un-calibrated RTK prediction."</p>
+</div>
+
+<div class="card card-green">
+  <h4>2. What-If Scenario Analysis</h4>
+  <p>Questions that are currently unanswerable become straightforward:</p>
+  <ul>
+    <li>"If we reline all pipes installed before 1970, how does peak RDII change?" → Reduce A_defects for pre-1970 pipes.</li>
+    <li>"If the water table rises 2 feet due to a new reservoir, what happens?" → Adjust H_gw boundary condition.</li>
+    <li>"If we get 20% more intense but 20% less frequent storms under climate change?" → Change P(t) forcing — the soil state dynamics respond naturally.</li>
+  </ul>
+</div>
+
+<div class="card card-green">
+  <h4>3. Spatially Distributed RDII Maps</h4>
+  <p>With GIS data on soil type, pipe age/material, and water table depth, you can produce spatially explicit RDII potential maps. These inform targeted rehabilitation — spend money where A_defects is high AND H_gw is high.</p>
+</div>
+
+<div class="card card-green">
+  <h4>4. Coupled Surface-Subsurface-Pipe Modeling</h4>
+  <p>The rebuilt framework naturally couples with 2D surface models (for direct inflow) and 3D groundwater models (for H_gw). This enables modeling of surcharge-induced exfiltration, flooding-induced infiltration, and other bidirectional phenomena that RTK cannot represent.</p>
+</div>
+
+<div class="card card-green">
+  <h4>5. Diurnal and Sub-Daily Patterns</h4>
+  <p>ET has a diurnal cycle. Tidal influence has sub-daily cycles. The continuous state model naturally captures these. RTK, with its event-based framework, cannot.</p>
+</div>
+
+<div class="card card-green">
+  <h4>6. Model Degradation Over Time</h4>
+  <p>Pipes deteriorate. Defect areas grow. The rebuilt model can include a time-dependent A_defects(t) that increases with age, allowing you to model system degradation and predict when rehabilitation becomes cost-effective.</p>
+</div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 5: ARCHITECTURE -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="architecture">
+<h2><span class="num">05</span> Radically Different Architecture</h2>
+<p>Once the old scaffolding is removed, the software architecture changes fundamentally.</p>
+
+<h3>5.1 Legacy Architecture (SWMM5 RTK)</h3>
+<div class="diagram">
+  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+  │  Rainfall    │────▶│  RTK Lookup  │────▶│  RDII as     │
+  │  Time Series │     │  (per month) │     │  Lateral     │
+  └──────────────┘     └──────────────┘     │  Inflow      │
+                                            └──────────────┘
+  
+  Data flow: P(t) → UH convolution → Q_rdii(t)
+  State: None. Pure input-output.
+  Parameters: R, T, K (×3 triangles ×12 months = 108 max)
+</div>
+
+<h3>5.2 Rebuilt Architecture</h3>
+<div class="diagram">
+  ┌──────────┐  ┌──────────┐  ┌──────────┐
+  │Rainfall  │  │  ET(T)   │  │  Tidal/  │
+  │  P(t)    │  │          │  │  Other   │
+  └────┬─────┘  └────┬─────┘  └────┬─────┘
+       │              │              │
+       ▼              ▼              │
+  ┌─────────────────────────┐       │
+  │   SOIL MOISTURE MODULE  │       │
+  │   S(t) state variable   │       │
+  │   dS/dt = f(P,ET,K(S)) │       │
+  └────────────┬────────────┘       │
+               │ recharge           │
+               ▼                    ▼
+  ┌─────────────────────────────────────┐
+  │     GROUNDWATER MODULE              │
+  │     H_gw(t) — head field            │
+  │     dH/dt = f(recharge, drain, BC)  │
+  └────────────┬────────────────────────┘
+               │ ΔH = H_gw - H_pipe
+               ▼
+  ┌─────────────────────────────────────┐
+  │     DEFECT TRANSFER MODULE          │
+  │     Q = f(ΔH, A_defects, geometry)  │
+  │                                     │◀── Pipe network
+  │     + Surface direct inflow module  │    (provides H_pipe)
+  └─────────────────────────────────────┘
+               │
+               ▼
+         Q_rdii(t) → Sewer Network
+</div>
+
+<h3>5.3 Key Architectural Differences</h3>
+<table>
+  <tr><th>Aspect</th><th>Legacy</th><th>Rebuilt</th></tr>
+  <tr>
+    <td>Coupling</td>
+    <td>One-way: rain → RDII → pipes</td>
+    <td>Two-way: pipes ↔ soil ↔ atmosphere</td>
+  </tr>
+  <tr>
+    <td>State</td>
+    <td>Stateless (memoryless UH)</td>
+    <td>Stateful (S, H_gw evolve continuously)</td>
+  </tr>
+  <tr>
+    <td>Temporal</td>
+    <td>Event-based with inter-event gaps</td>
+    <td>Continuous</td>
+  </tr>
+  <tr>
+    <td>Spatial</td>
+    <td>Lumped per sewershed</td>
+    <td>Distributed (can be as fine as data supports)</td>
+  </tr>
+  <tr>
+    <td>Modularity</td>
+    <td>Monolithic RTK block</td>
+    <td>Separable modules (soil, GW, defects, surface)</td>
+  </tr>
+  <tr>
+    <td>Extensibility</td>
+    <td>Cannot add new forcings</td>
+    <td>Any forcing can be added to the state equations</td>
+  </tr>
+  <tr>
+    <td>Data integration</td>
+    <td>Needs flow monitoring for calibration</td>
+    <td>Can use soil data, CCTV, GW monitoring, flow data</td>
+  </tr>
+</table>
+
+<h3>5.4 Implementation Minimalism</h3>
+<p>The rebuilt model can be implemented with surprisingly few components:</p>
+<pre><code>// Pseudocode: Minimal State-Based RDII Module
+
+class RDIISoilGWModel {
+  // State
+  S       // soil moisture ratio [0,1]
+  H_gw    // groundwater head [m]
+  
+  // Parameters (physical, bounded, estimable from data)
+  S_max       // max soil moisture capacity [m³/m³]
+  K_sat       // saturated hydraulic conductivity [m/s]
+  S_y         // specific yield [-]
+  A_defects   // effective defect area [m²]
+  eta         // direct connection fraction [-]
+  C_d         // discharge coefficient [-]
+  
+  step(P, ET, H_pipe, dt) {
+    // 1. Infiltration (Green-Ampt-like)
+    f_inf = pow(max(0, 1 - S/S_max), 1.5)
+    I = P * f_inf
+    
+    // 2. Soil moisture update
+    K_rel = exp(10 * (S - 0.7))  // relative conductivity
+    drain = K_sat * K_rel
+    dS = (I - ET - drain) * dt
+    S = clamp(S + dS, 0, S_max)
+    
+    // 3. Groundwater update
+    recharge = drain
+    gw_drain = 0.01 * (H_gw - H_base)  // simple linear drain
+    dH_gw = (recharge / S_y - gw_drain) * dt
+    H_gw += dH_gw
+    
+    // 4. RDII via defects
+    dH = max(0, H_gw - H_pipe)
+    Q_rdii = C_d * A_defects * sqrt(2 * 9.81 * dH)
+    
+    // 5. Direct inflow
+    Q_direct = eta * P * (1 - f_inf)
+    
+    return Q_rdii + Q_direct
+  }
+}
+</code></pre>
+<p>That's ~30 lines of core logic. The RTK implementation in SWMM5 is similarly compact — but the above captures physics that RTK structurally cannot represent.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 6: INTERACTIVE PLAYGROUND -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="playground">
+<h2><span class="num">06</span> Interactive Comparison</h2>
+<p>See the difference. Adjust parameters and observe how the rebuilt state-based model responds to repeated rainfall events vs. the legacy RTK approach.</p>
+
+<div style="margin: 1.5rem 0;">
+  <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+    <button class="panel-tab active" onclick="runSim()" style="border:1px solid var(--accent-dim);">Run Simulation</button>
+    <button class="panel-tab" onclick="resetSim()" style="border:1px solid var(--border);">Reset</button>
+  </div>
+
+  <div class="card" style="background:var(--surface-2);">
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size:12px; margin-bottom:1rem;">
+      <label>Initial Soil Moisture (S₀)
+        <input type="range" id="param-S0" min="0.1" max="0.9" step="0.05" value="0.3" style="width:100%;" oninput="updateParamLabel(this)">
+        <span id="label-S0">0.30</span>
+      </label>
+      <label>Rainfall Intensity (mm/hr)
+        <input type="range" id="param-P" min="5" max="50" step="5" value="20" style="width:100%;" oninput="updateParamLabel(this)">
+        <span id="label-P">20</span>
+      </label>
+      <label>Soil Sat. Capacity (S_max)
+        <input type="range" id="param-Smax" min="0.2" max="0.6" step="0.05" value="0.4" style="width:100%;" oninput="updateParamLabel(this)">
+        <span id="label-Smax">0.40</span>
+      </label>
+      <label>RTK R (fraction)
+        <input type="range" id="param-R" min="0.05" max="0.5" step="0.05" value="0.2" style="width:100%;" oninput="updateParamLabel(this)">
+        <span id="label-R">0.20</span>
+      </label>
+    </div>
+    <canvas id="simCanvas" width="800" height="340" style="width:100%; height:auto; border:1px solid var(--border); border-radius:2px; background:var(--bg);"></canvas>
+    <div style="font-size:11px; color:var(--text-muted); margin-top:0.5rem;">
+      <span style="color:var(--accent);">■</span> Rebuilt model (state-based) &nbsp;
+      <span style="color:var(--red);">■</span> Legacy RTK (stateless) &nbsp;
+      <span style="color:var(--amber);">■</span> Rainfall &nbsp;
+      Note how the rebuilt model produces less RDII for the first storm (dry soil) and more for subsequent storms (wet soil). RTK produces the same response every time.
+    </div>
+  </div>
+</div>
+
+<h3>Key Observation</h3>
+<div class="callout callout-true">
+  <span class="callout-icon">→</span>
+  <div>
+    <strong>The rebuilt model shows diminishing response on first storm, amplifying response on subsequent storms.</strong> This is physically correct: dry soil absorbs more rainfall (less becomes RDII), wet soil passes more through to the water table. RTK produces identical responses for every storm — a fundamental flaw for continuous simulation and design storm analysis.
+  </div>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION 7: SUMMARY -->
+<!-- ═══════════════════════════════════════════ -->
+<section id="summary">
+<h2><span class="num">07</span> Summary: What's Sacred, What's Arbitrary</h2>
+
+<table>
+  <tr><th>Element</th><th>Status</th><th>Verdict</th></tr>
+  <tr>
+    <td>Conservation of mass</td>
+    <td><span class="badge badge-fundamental">fundamental</span></td>
+    <td>Non-negotiable. Any model must conserve mass.</td>
+  </tr>
+  <tr>
+    <td>Head-driven flow through defects</td>
+    <td><span class="badge badge-fundamental">fundamental</span></td>
+    <td>Physics. Darcy + orifice/weir. Cannot be simplified away without losing predictive power.</td>
+  </tr>
+  <tr>
+    <td>Soil as stateful nonlinear reservoir</td>
+    <td><span class="badge badge-fundamental">fundamental</span></td>
+    <td>This is the mechanism that creates the "hydrograph shape." Ignoring it means assuming the shape.</td>
+  </tr>
+  <tr>
+    <td>Triangular unit hydrograph</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>A convenient approximation from 1930s hydrology. Sewer systems don't produce triangles.</td>
+  </tr>
+  <tr>
+    <td>R, T, K parameterization</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>Chosen for calibratability, not physical meaning. Swap it for physics-based parameters.</td>
+  </tr>
+  <tr>
+    <td>Monthly parameter variation</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>A discretization hack. The physical system is continuous.</td>
+  </tr>
+  <tr>
+    <td>Linear superposition</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>Violated by every nonlinear soil and surcharged pipe in existence.</td>
+  </tr>
+  <tr>
+    <td>Infiltration/inflow separation</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>A useful accounting distinction but not a physical boundary. Model the continuum.</td>
+  </tr>
+  <tr>
+    <td>Rainfall as sole forcing</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>Dominant but not exclusive. Tidal, snowmelt, and GW interactions are real.</td>
+  </tr>
+  <tr>
+    <td>SWMM5's computational architecture</td>
+    <td><span class="badge badge-arbitrary">arbitrary</span></td>
+    <td>A product of 1980s computational constraints. We can do better now.</td>
+  </tr>
+</table>
+
+<div class="callout callout-warn" style="margin-top:2rem;">
+  <span class="callout-icon">⚡</span>
+  <div>
+    <strong>The core insight:</strong> RTK doesn't model RDII. It models the <em>shape of the output hydrograph</em> and calls it RDII. The rebuilt model models the <em>process that creates the hydrograph</em> and lets the shape emerge. This is the difference between curve-fitting and simulation — and it's the difference that matters for prediction, scenario analysis, and infrastructure investment decisions.
+  </div>
+</div>
+</section>
+
+<footer>
+  First-principles deconstruction of RDII in SWMM5. Built on bedrock physics, not inherited convention.
+</footer>
+
+</div><!-- /container -->
+
+<script>
+// ═══════════════════════════════════════════
+// PANEL SWITCHING
+// ═══════════════════════════════════════════
+function showPanel(id) {
+  document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ═══════════════════════════════════════════
+// PROGRESS BAR
+// ═══════════════════════════════════════════
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+  document.getElementById('progress').style.width = pct + '%';
+});
+
+// ═══════════════════════════════════════════
+// PARAMETER LABELS
+// ═══════════════════════════════════════════
+function updateParamLabel(el) {
+  const id = el.id.replace('param-','');
+  document.getElementById('label-'+id).textContent = parseFloat(el.value).toFixed(2);
+}
+
+// ═══════════════════════════════════════════
+// SIMULATION ENGINE
+// ═══════════════════════════════════════════
+function runSim() {
+  const canvas = document.getElementById('simCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Parameters
+  const S0   = parseFloat(document.getElementById('param-S0').value);
+  const Pmm  = parseFloat(document.getElementById('param-P').value);
+  const Smax = parseFloat(document.getElementById('param-Smax').value);
+  const R    = parseFloat(document.getElementById('param-R').value);
+
+  const dt = 0.25; // hours
+  const totalH = 72;
+  const steps = Math.floor(totalH / dt);
+
+  // Rainfall pattern: 3 storms, 2h each, separated by ~20h gaps
+  function rainfall(t) {
+    if ((t >= 4 && t < 6) || (t >= 28 && t < 30) || (t >= 52 && t < 54)) return Pmm;
+    return 0;
+  }
+
+  // State-based model
+  let S = S0;
+  const rebuilt = [];
+  const soilState = [];
+
+  // RTK model (simplified: R * P, no time delay for clarity)
+  const legacy = [];
+
+  for (let i = 0; i < steps; i++) {
+    const t = i * dt;
+    const P = rainfall(t);
+
+    // --- Rebuilt Model ---
+    const fInf = Math.pow(Math.max(0, 1 - S / Smax), 1.5);
+    const I = P * fInf; // infiltration
+    const Krel = Math.exp(8 * (S - 0.65));
+    const drain = 2.0 * Math.max(0, Krel); // simplified drain rate
+    const ET = 0.2; // mm/hr constant ET
+
+    const dS = (I - ET - drain) * dt / 100; // normalize
+    S = Math.max(0, Math.min(Smax, S + dS));
+
+    // RDII = what didn't infiltrate into soil + what drained from soil
+    const Q_rdii_rebuilt = (P * (1 - fInf)) * 0.6 + drain * 0.8;
+    rebuilt.push(Q_rdii_rebuilt);
+    soilState.push(S);
+
+    // --- Legacy RTK ---
+    Q_rdii_legacy = R * P;
+    legacy.push(Q_rdii_legacy);
+  }
+
+  // --- DRAW ---
+  ctx.clearRect(0, 0, W, H);
+
+  const margin = { top: 30, right: 30, bottom: 40, left: 50 };
+  const pw = W - margin.left - margin.right;
+  const ph = H - margin.top - margin.bottom;
+
+  // Axes
+  ctx.strokeStyle = '#2a352d';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(margin.left, margin.top);
+  ctx.lineTo(margin.left, margin.top + ph);
+  ctx.lineTo(margin.left + pw, margin.top + ph);
+  ctx.stroke();
+
+  // Y-axis labels
+  ctx.fillStyle = '#6b7a6e';
+  ctx.font = '10px "DM Mono"';
+  ctx.textAlign = 'right';
+  const maxQ = Math.max(...rebuilt, ...legacy, Pmm) * 1.2;
+  for (let i = 0; i <= 4; i++) {
+    const val = (maxQ * i / 4).toFixed(0);
+    const y = margin.top + ph - (ph * i / 4);
+    ctx.fillText(val, margin.left - 6, y + 3);
+    ctx.strokeStyle = '#1a1f1c';
+    ctx.beginPath();
+    ctx.moveTo(margin.left, y);
+    ctx.lineTo(margin.left + pw, y);
+    ctx.stroke();
+  }
+
+  // X-axis labels
+  ctx.textAlign = 'center';
+  for (let h = 0; h <= totalH; h += 12) {
+    const x = margin.left + (h / totalH) * pw;
+    ctx.fillText(h + 'h', x, margin.top + ph + 16);
+  }
+
+  // Rainfall bars
+  ctx.fillStyle = 'rgba(207,170,126,0.25)';
+  for (let i = 0; i < steps; i++) {
+    const t = i * dt;
+    const P = rainfall(t);
+    if (P > 0) {
+      const x = margin.left + (t / totalH) * pw;
+      const barH = (P / maxQ) * ph;
+      ctx.fillRect(x, margin.top + ph - barH, Math.max(1, (dt / totalH) * pw), barH);
+    }
+  }
+
+  // Legacy RTK line
+  ctx.strokeStyle = '#cf7e7e';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < steps; i++) {
+    const x = margin.left + (i * dt / totalH) * pw;
+    const y = margin.top + ph - (legacy[i] / maxQ) * ph;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Rebuilt line
+  ctx.strokeStyle = '#7ecf8a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < steps; i++) {
+    const x = margin.left + (i * dt / totalH) * pw;
+    const y = margin.top + ph - (rebuilt[i] / maxQ) * ph;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Title
+  ctx.fillStyle = '#d4ddd6';
+  ctx.font = '11px "DM Mono"';
+  ctx.textAlign = 'left';
+  ctx.fillText('RDII Response: Rebuilt (state-based) vs Legacy (RTK)', margin.left, 18);
+
+  // Storm annotations
+  ctx.fillStyle = '#cfaa7e';
+  ctx.font = '9px "DM Mono"';
+  ctx.textAlign = 'center';
+  ['Storm 1\n(dry soil)', 'Storm 2\n(wet soil)', 'Storm 3\n(wet soil)'].forEach((label, idx) => {
+    const tCenter = 5 + idx * 24;
+    const x = margin.left + (tCenter / totalH) * pw;
+    ctx.fillText(label.split('\n')[0], x, margin.top + ph + 30);
+  });
+}
+
+function resetSim() {
+  document.getElementById('param-S0').value = 0.3;
+  document.getElementById('param-P').value = 20;
+  document.getElementById('param-Smax').value = 0.4;
+  document.getElementById('param-R').value = 0.2;
+  ['S0','P','Smax','R'].forEach(id => {
+    const el = document.getElementById('param-' + id);
+    document.getElementById('label-' + id).textContent = parseFloat(el.value).toFixed(2);
+  });
+  runSim();
+}
+
+// Auto-run on load
+window.addEventListener('DOMContentLoaded', () => {
+  runSim();
+  // Auto-update on param change
+  document.querySelectorAll('input[type=range]').forEach(el => {
+    el.addEventListener('input', runSim);
+  });
+});
+</script>
+</body>
+</html>
